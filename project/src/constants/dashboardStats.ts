@@ -84,9 +84,9 @@ const getStats = async () => {
   ];
 
   const demographicStats = [
-    { title: "MALE MEMBERS", value: await fetchData("members", "gender", "male"), Icon: UserCircle2, path:"/member/male" },
+    { title: "MALE MEMBERS", value: await fetchData("members", "gender", "male"), Icon: UserCircle2, path:"/members?type=male" },
     { title: "TRANSGENDER MEMBERS", value: await fetchData("members", "gender", "transgender"), Icon: UserCog2, path:"/member/transgender" },
-    { title: "FEMALE MEMBERS", value: await fetchData("members", "gender", "female"), Icon: UserCircle2, path:"/member/female" },
+    { title: "FEMALE MEMBERS", value: await fetchData("members", "gender", "female"), Icon: UserCircle2, path:"/members?type=female" },
     { title: "AMOUNT COLLECTED", value: await fetchTotalAmountCollected(), Icon: DollarSign, path:"/transaction/all" },
   ];
 

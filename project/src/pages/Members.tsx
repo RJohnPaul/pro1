@@ -302,6 +302,11 @@ const fetchAllMembers = async () => {
       }
     }
 
+    // Handle search query from URL params for gender male and female from gender column
+    if (type && (type.toLowerCase() === "male" || type.toLowerCase() === "female")) {
+      dbQuery = dbQuery.eq("gender", type);
+    }
+
     // Handle search query from URL params
     if (query) {
       dbQuery = dbQuery.or(`member_id.eq.${query},member_phone_number.eq.${query}`);
