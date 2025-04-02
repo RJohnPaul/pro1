@@ -54,73 +54,76 @@ const MemberForm = () => {
   useEffect(() => {
     const calculateBillingDetails = () => {
       let totalMonthsPaid = 0;
-      let billingAmount = 0;
+      const billingAmount = parseFloat(formData.billingAmount) || 0;
       let packAmount = 0;
-  
+
       switch (formData.memberPack) {
-        case "Quaterly":
-          totalMonthsPaid = 3;
-          billingAmount = 7500;
-          packAmount = 7500;
-          break;
-        case "Half-yearly":
-          totalMonthsPaid = 6;
-          billingAmount = 12000;
-          packAmount = 12000;
-          break;
-        case "Monthly":
-          totalMonthsPaid = 1;
-          billingAmount = 3500;
-          packAmount = 3500;
-          break;
-        case "Annual":
-          totalMonthsPaid = 12;
-          billingAmount = 18000;
-          packAmount = 18000;
-          break;
-        case "2 Months":
-          totalMonthsPaid = 2;
-          billingAmount = 5000;
-          packAmount = 5000;
-          break;
-        case "4 Months":
-          totalMonthsPaid = 4;
-          billingAmount = 7800;
-          packAmount = 7800;
-          break;
-        case "12 + 2 Months":
-          totalMonthsPaid = 14;
-          billingAmount = 18000;
-          packAmount = 18000;
-          break;
-        case "6 + 1 Month":
-          totalMonthsPaid = 7;
-          billingAmount = 9000;
-          packAmount = 9000;
-          break;
-        default:
-          totalMonthsPaid = 0;
-          billingAmount = 0;
-          packAmount = 0;
+      case "Quaterly":
+        totalMonthsPaid = 3;
+        packAmount = 7500;
+        break;
+      case "Half-yearly":
+        totalMonthsPaid = 6;
+        packAmount = 12000;
+        break;
+      case "Monthly":
+        totalMonthsPaid = 1;
+        packAmount = 3500;
+        break;
+      case "Annual":
+        totalMonthsPaid = 12;
+        packAmount = 18000;
+        break;
+      case "2 Months":
+        totalMonthsPaid = 2;
+        packAmount = 5000;
+        break;
+      case "4 Months":
+        totalMonthsPaid = 4;
+        packAmount = 7800;
+        break;
+      case "12 + 2 Months":
+        totalMonthsPaid = 14;
+        packAmount = 18000;
+        break;
+      case "6 + 1 Month":
+        totalMonthsPaid = 7;
+        packAmount = 9000;
+        break;
+      default:
+        totalMonthsPaid = 0;
+        packAmount = 0;
       }
-  
-      let totalAmount = billingAmount;
-  
+
+      let totalAmount = packAmount;
+
+      if (parseFloat(formData.discountAmount) > 0) {
+      totalAmount -= parseFloat(formData.discountAmount);
+      }
+
+      if (parseFloat(formData.tax) > 0) {
+      const taxed = (parseFloat(formData.tax) / 100) * totalAmount;
+      totalAmount += taxed;
+      }
+
       if (parseFloat(formData.discountAmount) > 1) {
-        totalAmount -= parseFloat(formData.discountAmount);
+      totalAmount -= parseFloat(formData.discountAmount);
       }
-  
+
       if (parseFloat(formData.tax) > 1) {
-        const taxed = (parseFloat(formData.tax) / 100) * totalAmount;
-        totalAmount += taxed;  // Corrected tax addition
+      const taxed = (parseFloat(formData.tax) / 100) * totalAmount;
+      totalAmount += taxed;
       }
-  
+
+      const pendingAmount = totalAmount - (billingAmount - parseFloat(formData.discountAmount || "0"));
+
       setFormData((prevFormData) => ({
-        ...prevFormData,
-        totalMonthPaid: totalMonthsPaid.toString(),
-        billingAmount: billingAmount.toString(),
-        packAmount: packAmount.toString(),
-        totalAmount: totalAmount.toFixed(2),
+      ...prevFormData,
+      totalMonthPaid: totalMonthsPaid.toString(),
+      billingAmount: billingAmount.toString(),
+      packAmount: packAmount.toString(),
+      totalAmount: totalAmount.toFixed(2),
+      pendingAmount: pendingAmount.toFixed(2),
       }));
     };
   

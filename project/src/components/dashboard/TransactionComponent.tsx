@@ -84,11 +84,10 @@ const TransactionComponent = () => {
   const [order, setOrder] = useState<"asc" | "desc">("asc");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderBy, setOrderBy] = useState<keyof Transaction>("sno");
+  const [loading, setLoading] = useState(true);
 
   // Added for sorting by SNO:
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
-
-
 
   useEffect(() => {
     fetchTransactions();
@@ -100,32 +99,40 @@ const TransactionComponent = () => {
   }, [transactions, searchQuery, sortDirection]);
 
   const fetchTransactions = async () => {
-    let all: Transaction[] = [];
-    let from = 0;
-    const step = 1000;
-    let to = step - 1;
-    let fetchMore = true;
+    setLoading(true);
+    try {
+      let all: Transaction[] = [];
+      let from = 0;
+      const step = 1000;
+      let to = step - 1;
+      let fetchMore = true;
 
-    while (fetchMore) {
-      const { data, error } = await supabase
-        .from("transactions")
-        .select("*")
-        .range(from, to);
+      while (fetchMore) {
+        const { data, error } = await supabase
+          .from("transactions")
+          .select("*")
+          .range(from, to);
 
-      if (error) {
-        toast.error("Failed to fetch transactions: " + error.message);
-        fetchMore = false;
-      } else {
-        if (data && data.length > 0) {
-          all = [...all, ...data];
-          from += step;
-          to += step;
-        } else {
+        if (error) {
+          toast.error("Failed to fetch transactions: " + error.message);
           fetchMore = false;
+        } else {
+          if (data && data.length > 0) {
+            all = [...all, ...data];
+            from += step;
+            to += step;
+          } else {
+            fetchMore = false;
+          }
         }
       }
+      setTransactions(all);
+    } catch (error) {
+      const errorMessage = (error as Error).message;
+      toast.error("Error fetching transactions: " + errorMessage);
+    } finally {
+      setLoading(false);
     }
-    setTransactions(all);
   };
 
   const filterAndSortTransactions = () => {
@@ -147,35 +154,74 @@ const TransactionComponent = () => {
     setFiltered(result);
   };
 
+  // FIXED CALCULATION FUNCTION
   const calculateStatusCards = () => {
-    const today = new Date();
-    let collected = 0;
-    let pending = 0;
-    let todayCollected = 0;
-    let todayTrans = 0;
+    try {
+      // Create dates with time set to midnight for accurate comparisons
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      
+      let collected = 0;
+      let pending = 0;
+      let todayCollected = 0;
+      let todayTrans = 0;
 
-    transactions.forEach((t) => {
-      const d = new Date(t.bill_date || "");
-      if (
-        d.getFullYear() === today.getFullYear() &&
-        d.getMonth() === today.getMonth()
-      ) {
-        collected += parseFloat(t.total_amount_received || "0");
-      }
-      pending += parseFloat(t.pending || "0");
-      if (
-        d.getFullYear() === today.getFullYear() &&
-        d.getMonth() === today.getMonth() &&
-        d.getDate() === today.getDate()
-      ) {
-        todayCollected += parseFloat(t.total_amount_received || "0");
-        todayTrans++;
-      }
-    });
-    setAmountCollected(collected);
-    setAmountPending(pending);
-    setCollectedToday(todayCollected);
-    setTransactionCount(todayTrans);
+      transactions.forEach((t) => {
+        try {
+          // Safe parsing of the bill date
+          if (!t.bill_date) return;
+          
+          const dateParts = t.bill_date.split('T')[0].split('-');
+          if (dateParts.length !== 3) return;
+          
+          // Create date object and set to midnight
+          const billDate = new Date(
+            parseInt(dateParts[0]), 
+            parseInt(dateParts[1]) - 1, // Month is 0-indexed in JS
+            parseInt(dateParts[2])
+          );
+
+          // Parse total_amount_received safely
+          const transAmount = parseFloat(t.total_amount_received);
+          const amount = isNaN(transAmount) ? 0 : transAmount;
+          
+          // Parse pending amount safely
+          const pendingAmount = parseFloat(t.pending);
+          if (!isNaN(pendingAmount)) {
+            pending += pendingAmount;
+          }
+          
+          // Check if this transaction is from current month
+          if (billDate >= firstDayOfMonth) {
+            collected += amount;
+          }
+          
+          // Check if this transaction is from today
+          if (billDate.getFullYear() === today.getFullYear() &&
+              billDate.getMonth() === today.getMonth() &&
+              billDate.getDate() === today.getDate()) {
+            todayCollected += amount;
+            todayTrans++;
+          }
+        } catch (err) {
+          // Skip individual transaction errors
+          console.error("Error processing transaction:", err);
+        }
+      });
+      
+      setAmountCollected(collected);
+      setAmountPending(pending);
+      setCollectedToday(todayCollected);
+      setTransactionCount(todayTrans);
+    } catch (err) {
+      console.error("Error calculating metrics:", err);
+      // Set defaults in case of error
+      setAmountCollected(0);
+      setAmountPending(0);
+      setCollectedToday(0);
+      setTransactionCount(0);
+    }
   };
 
   const handleClick = (e: React.MouseEvent<HTMLElement>, t: Transaction) => {
@@ -308,14 +354,7 @@ const TransactionComponent = () => {
     setSelectedTransaction((prev) => (prev ? { ...prev, [name]: value } : null));
   };
 
-  // Add this function at the top with other imports
-  const formatDate = (dateString: string) => {
-    if (!dateString) return "";
-    const [year, month, day] = dateString.split('-');
-    return `${day}-${month}-${year}`;
-  };
-
-  // Add this custom pagination component
+  // Custom pagination component
   const TablePaginationActions = (props: {
     count: number;
     page: number;
@@ -509,7 +548,7 @@ const TransactionComponent = () => {
                 Collected Today
               </Typography>
               <Typography variant="h5" sx={{ fontWeight: "bold" }}>
-                {collectedToday.toLocaleString()}
+                ₹{collectedToday.toLocaleString()}
               </Typography>
             </CardContent>
           </Card>
