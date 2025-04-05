@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/rules-of-hooks */
 import React, { useState, useEffect } from "react";
 import { createClient } from "@supabase/supabase-js";
 import { ToastContainer, toast } from "react-toastify";
@@ -8,6 +9,7 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 if (!supabaseUrl || !supabaseAnonKey) throw new Error("Missing Supabase URL or anon key");
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
+// FIXED: Removed async from component function declaration
 const MemberForm = () => {
   const [formData, setFormData] = useState({
     memberId: "",
@@ -42,22 +44,87 @@ const MemberForm = () => {
     emergencyPhoneNumber: "",
   });
 
+  // Track if fields have been manually edited
+  const [editedFields, setEditedFields] = useState({
+    billingAmount: false,
+    pendingAmount: false
+  });
+
+  // Fetch the latest member ID when component mounts
+  useEffect(() => {
+    const fetchLatestMemberId = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("members")
+          .select("member_id")
+          .order("member_id", { ascending: false })
+          .limit(1);
+        
+        if (error) {
+          console.error("Error fetching latest member ID:", error);
+          return;
+        }
+        
+        if (data && data.length > 0) {
+          // Get the latest ID and increment it
+          const latestId = data[0].member_id;
+          const nextId = (parseInt(latestId) + 1).toString();
+          
+          // Set the next member ID
+          setFormData(prev => ({
+            ...prev,
+            memberId: nextId
+          }));
+        } else {
+          // No existing members, start from 1001
+          setFormData(prev => ({
+            ...prev,
+            memberId: "1001"
+          }));
+        }
+      } catch (err) {
+        console.error("Error generating member ID:", err);
+      }
+    };
+
+    fetchLatestMemberId();
+  }, []);
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     const files = (e.target as HTMLInputElement).files;
-    setFormData({
-      ...formData,
+    
+    // Track if billing amount or pending amount has been manually edited
+    if (name === "billingAmount" || name === "pendingAmount") {
+      setEditedFields(prev => ({
+        ...prev,
+        [name]: true
+      }));
+    }
+    
+    setFormData(prev => ({
+      ...prev,
       [name]: files ? files[0] : value,
-    });
+    }));
   };
 
   useEffect(() => {
-    const calculateBillingDetails = () => {
-      let totalMonthsPaid = 0;
-      const billingAmount = parseFloat(formData.billingAmount) || 0;
-      let packAmount = 0;
+    calculateBillingDetails();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    formData.memberPack,
+    formData.discountAmount,
+    formData.tax,
+    formData.registrationFee,
+    formData.billingAmount
+  ]);
 
-      switch (formData.memberPack) {
+  const calculateBillingDetails = () => {
+    let totalMonthsPaid = 0;
+    let packAmount = 0;
+    
+    // Set months and amount based on membership pack
+    switch (formData.memberPack) {
       case "Quaterly":
         totalMonthsPaid = 3;
         packAmount = 7500;
@@ -93,43 +160,182 @@ const MemberForm = () => {
       default:
         totalMonthsPaid = 0;
         packAmount = 0;
-      }
+    }
 
-      let totalAmount = packAmount;
+    // Calculate total amount
+    let totalAmount = packAmount;
+    
+    // Apply discount (only once)
+    const discount = parseFloat(formData.discountAmount) || 0;
+    if (discount > 0) {
+      totalAmount -= discount;
+    }
 
-      if (parseFloat(formData.discountAmount) > 0) {
-      totalAmount -= parseFloat(formData.discountAmount);
-      }
+    // Apply tax
+    const taxRate = parseFloat(formData.tax) || 0;
+    if (taxRate > 0) {
+      const taxedAmount = (taxRate / 100) * totalAmount;
+      totalAmount += taxedAmount;
+    }
+    
+    // Add registration fee if any
+    const regFee = parseFloat(formData.registrationFee) || 0;
+    if (regFee > 0) {
+      totalAmount += regFee;
+    }
 
-      if (parseFloat(formData.tax) > 0) {
-      const taxed = (parseFloat(formData.tax) / 100) * totalAmount;
-      totalAmount += taxed;
-      }
+    // Parse billing amount (what customer is paying now)
+    const billingAmount = parseFloat(formData.billingAmount) || 0;
+    
+    // Calculate pending amount (only if not manually edited)
+    let pendingAmount = parseFloat(formData.pendingAmount) || 0;
+    if (!editedFields.pendingAmount) {
+      pendingAmount = Math.max(0, totalAmount - billingAmount);
+    }
 
-      if (parseFloat(formData.discountAmount) > 1) {
-      totalAmount -= parseFloat(formData.discountAmount);
-      }
-
-      if (parseFloat(formData.tax) > 1) {
-      const taxed = (parseFloat(formData.tax) / 100) * totalAmount;
-      totalAmount += taxed;
-      }
-
-      const pendingAmount = totalAmount - (billingAmount - parseFloat(formData.discountAmount || "0"));
-
-      setFormData((prevFormData) => ({
+    // Update form data with calculated values
+    setFormData(prevFormData => ({
       ...prevFormData,
       totalMonthPaid: totalMonthsPaid.toString(),
-      billingAmount: billingAmount.toString(),
       packAmount: packAmount.toString(),
       totalAmount: totalAmount.toFixed(2),
-      pendingAmount: pendingAmount.toFixed(2),
-      }));
-    };
-  
-    calculateBillingDetails();
-  }, [formData.memberPack, formData.discountAmount, formData.tax]);
-  
+      pendingAmount: pendingAmount.toFixed(2)
+    }));
+  };
+
+  // Check if current date is a new day or month compared to the last update
+  const checkForDateChange = (lastUpdatedDate: string | null): { isNewDay: boolean; isNewMonth: boolean } => {
+    if (!lastUpdatedDate) return { isNewDay: false, isNewMonth: false };
+
+    const now = new Date();
+    const lastUpdate = new Date(lastUpdatedDate);
+    
+    // Check if it's a new day
+    const isNewDay = 
+      now.getDate() !== lastUpdate.getDate() || 
+      now.getMonth() !== lastUpdate.getMonth() ||
+      now.getFullYear() !== lastUpdate.getFullYear();
+    
+    // Check if it's a new month
+    const isNewMonth = 
+      now.getMonth() !== lastUpdate.getMonth() ||
+      now.getFullYear() !== lastUpdate.getFullYear();
+    
+    return { isNewDay, isNewMonth };
+  };
+
+  // Create a metrics record if one doesn't exist
+  const createMetricsRecord = async (billingAmount: number): Promise<boolean> => {
+    try {
+      console.log("Creating new metrics record in stat_card");
+      
+      // Create initial metrics record
+      const { error } = await supabase
+        .from("stat_card")
+        .insert({
+          sno: 1,
+          collected_month: billingAmount.toString(),
+          collected_today: billingAmount.toString(),
+          trans_done: "1",
+          last_updated: new Date().toISOString()
+        });
+      
+      if (error) {
+        console.error("Error creating metrics record:", error);
+        return false;
+      }
+      
+      return true;
+    } catch (err) {
+      console.error("Error in createMetricsRecord:", err);
+      return false;
+    }
+  };
+
+  // Update metrics record with new transaction
+  const updateMetricsRecord = async (billingAmount: number): Promise<boolean> => {
+    try {
+      console.log(`New member payment metrics update: amount = ${billingAmount}`);
+      
+      // First try to create the stat_card table if it doesn't exist
+      try {
+        await supabase.rpc('create_stat_card_table_if_not_exists');
+      } catch (e) {
+        console.log("Table might already exist or error:", e);
+      }
+
+      // Fetch current metrics
+      const { data, error } = await supabase
+        .from("stat_card")
+        .select("*")
+        .eq("sno", 1)
+        .maybeSingle();
+        
+      if (error) {
+        console.error("Error fetching current metrics:", error);
+        
+        // Try to create the record if it doesn't exist
+        if (error.code === 'PGRST116') {
+          return await createMetricsRecord(billingAmount);
+        }
+        return false;
+      }
+      
+      if (!data) {
+        // Create new record if none exists
+        return await createMetricsRecord(billingAmount);
+      }
+      
+      // Check for day/month change and reset if needed
+      const { isNewDay, isNewMonth } = checkForDateChange(data.last_updated);
+      const today = new Date().toISOString();
+      
+      // Parse current values to numbers
+      let collectedMonth = parseFloat(data.collected_month || "0");
+      let collectedToday = parseFloat(data.collected_today || "0");
+      let transactionsDone = parseInt(data.trans_done || "0");
+      
+      // Reset values if needed based on date change
+      if (isNewDay) {
+        console.log("Resetting daily metrics - new day detected");
+        collectedToday = 0;
+        transactionsDone = 0;
+      }
+      
+      if (isNewMonth) {
+        console.log("Resetting monthly metrics - new month detected");
+        collectedMonth = 0;
+      }
+      
+      // Add the new billing amount
+      collectedMonth += billingAmount;
+      collectedToday += billingAmount;
+      transactionsDone += 1;
+      
+      console.log(`Member form metrics update: month=${collectedMonth}, today=${collectedToday}, transactions=${transactionsDone}`);
+      
+      // Update the record
+      const { error: updateError } = await supabase
+        .from("stat_card")
+        .update({
+          collected_month: collectedMonth.toString(),
+          collected_today: collectedToday.toString(),
+          trans_done: transactionsDone.toString(),
+          last_updated: today
+        })
+        .eq("sno", 1);
+      
+      if (updateError) {
+        console.error("Error updating metrics:", updateError);
+        return false;
+      }
+      
+      return true;
+    } catch (err) {
+      console.error("Error in updateMetricsRecord:", err);
+      return false;
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -141,7 +347,7 @@ const MemberForm = () => {
         .from("members")
         .insert({
           member_id: memberId,
-          sno : memberId,
+          sno: memberId,
           member_name: formData.memberName,
           dob: formData.memberDob,
           member_email: formData.memberEmail,
@@ -152,7 +358,7 @@ const MemberForm = () => {
           document_id_number: formData.documentIdNumber,
           payment_mode: formData.paymentMode,
           member_joining_date: formData.memberJoiningDate,
-          bill_date : formData.billDate,
+          bill_date: formData.billDate,
           member_address: formData.memberAddress,
           member_phone_number: formData.memberPhoneNumber,
           member_type: formData.memberPack,
@@ -160,6 +366,11 @@ const MemberForm = () => {
         });
 
       if (memberError) throw memberError;
+
+      // Calculate amount paid now
+      const totalAmount = parseFloat(formData.totalAmount);
+      const pendingAmount = parseFloat(formData.pendingAmount);
+      const paidNow = totalAmount - pendingAmount;
 
       // Insert into transactions table
       const { error: transactionError } = await supabase
@@ -176,16 +387,33 @@ const MemberForm = () => {
           discount: formData.discountAmount,
           pending: formData.pendingAmount,
           total_amount_received: formData.totalAmount,
-          total_paid: (parseFloat(formData.totalAmount) - parseFloat(formData.pendingAmount)).toFixed(2),
+          total_paid: paidNow.toFixed(2),
           renewal_date: formData.pendingDate,
           month_paid: formData.totalMonthPaid,
+          state: pendingAmount > 0 ? (paidNow > 0 ? "Partially Paid" : "Pending") : "Paid"
         });
 
       if (transactionError) throw transactionError;
 
+      // Update stat_card metrics with the new payment
+      const billingAmount = parseFloat(formData.billingAmount) || 0;
+      await updateMetricsRecord(billingAmount);
+
       toast.success("Member and transaction added successfully!");
+
+      // Fetch the next member ID after successful submission
+      const { data } = await supabase
+        .from("members")
+        .select("member_id")
+        .order("member_id", { ascending: false })
+        .limit(1);
+      
+      const nextId = data && data.length > 0 ? 
+        (parseInt(data[0].member_id) + 1).toString() : "1001";
+      
+      // Reset form with the new member ID
       setFormData({
-        memberId: "",
+        memberId: nextId,
         memberName: "",
         billDate: "",
         memberJoiningDate: "",
@@ -216,9 +444,16 @@ const MemberForm = () => {
         height: "",
         emergencyPhoneNumber: "",
       });
-    } catch (error) {
-      const errorMessage = (error as Error).message;
-      toast.error("Failed to add member and transaction: " + errorMessage);
+      
+      // Reset edited fields tracking
+      setEditedFields({
+        billingAmount: false,
+        pendingAmount: false
+      });
+      
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } catch (error: any) {
+      toast.error("Failed to add member and transaction: " + error.message);
     }
   };
 
@@ -256,15 +491,13 @@ const MemberForm = () => {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "20px" }}>
           {/* Column 1 */}
           <div>
-            <label style={labelStyle}>Member ID*</label>
+            <label style={labelStyle}>Member ID* (Auto-generated)</label>
             <input
               type="text"
               name="memberId"
               value={formData.memberId}
-              onChange={handleInputChange}
-              placeholder="Enter Member ID"
-              style={inputStyle}
-              required
+              style={{...inputStyle, backgroundColor: "#f0f0f0"}}
+              readOnly
             />
             <label style={labelStyle}>Member Name*</label>
             <input
@@ -437,10 +670,10 @@ const MemberForm = () => {
               value={formData.packAmount}
               onChange={handleInputChange}
               placeholder="Enter Pack Amount"
-              style={inputStyle}
-              required
+              style={{...inputStyle, backgroundColor: "#f8f8f8"}}
+              readOnly
             />
-            <label style={labelStyle}>Discount Amount*</label>
+            <label style={labelStyle}>Discount Amount</label>
             <input
               type="number"
               name="discountAmount"
@@ -448,16 +681,20 @@ const MemberForm = () => {
               onChange={handleInputChange}
               placeholder="Enter Discount Amount"
               style={inputStyle}
-              required
             />
-            <label style={labelStyle}>Pending Amount</label>
+            <label style={labelStyle}>
+              Pending Amount {editedFields.pendingAmount ? "(Manually Edited)" : "(Auto-calculated)"}
+            </label>
             <input
               type="number"
               name="pendingAmount"
               value={formData.pendingAmount}
               onChange={handleInputChange}
               placeholder="Pending Amount"
-              style={inputStyle}
+              style={{
+                ...inputStyle,
+                backgroundColor: editedFields.pendingAmount ? "#fff3cd" : "#f8f8f8"
+              }}
             />
             <label style={labelStyle}>Pending Date</label>
             <input
@@ -496,17 +733,22 @@ const MemberForm = () => {
               value={formData.totalMonthPaid}
               onChange={handleInputChange}
               placeholder="Total Months Paid"
-              style={inputStyle}
-              required
+              style={{...inputStyle, backgroundColor: "#f8f8f8"}}
+              readOnly
             />
-            <label style={labelStyle}>Billing Amount*</label>
+            <label style={labelStyle}>
+              Billing Amount* {editedFields.billingAmount ? "(Manually Edited)" : ""}
+            </label>
             <input
               type="number"
               name="billingAmount"
               value={formData.billingAmount}
               onChange={handleInputChange}
               placeholder="Enter Billing Amount"
-              style={inputStyle}
+              style={{
+                ...inputStyle,
+                backgroundColor: editedFields.billingAmount ? "#fff3cd" : "#ffffff"
+              }}
               required
             />
             <label style={labelStyle}>Registration Fee</label>
@@ -525,7 +767,8 @@ const MemberForm = () => {
               value={formData.totalAmount}
               onChange={handleInputChange}
               placeholder="Enter Total Amount"
-              style={inputStyle}
+              style={{...inputStyle, backgroundColor: "#f8f8f8"}}
+              readOnly
             />
             <label style={labelStyle}>Tax (%)</label>
             <input
@@ -557,7 +800,7 @@ const MemberForm = () => {
               placeholder="Enter Height"
               style={inputStyle}
             />
-            <label style={labelStyle}>Emergency Phone Number*</label>
+            <label style={labelStyle}>Emergency Phone Number</label>
             <input
               type="tel"
               name="emergencyPhoneNumber"
@@ -570,6 +813,26 @@ const MemberForm = () => {
         </div>
 
         <div style={{ textAlign: "center", marginTop: "20px" }}>
+          {editedFields.pendingAmount && (
+            <button
+              type="button"
+              onClick={() => {
+                setEditedFields(prev => ({...prev, pendingAmount: false}));
+                calculateBillingDetails();
+              }}
+              style={{
+                padding: "8px 15px",
+                backgroundColor: "#6c757d",
+                color: "#fff",
+                border: "none",
+                borderRadius: "4px",
+                cursor: "pointer",
+                marginRight: "10px",
+              }}
+            >
+              Recalculate Pending Amount
+            </button>
+          )}
           <button
             type="submit"
             style={{
