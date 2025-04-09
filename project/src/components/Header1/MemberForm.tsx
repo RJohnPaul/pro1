@@ -47,55 +47,69 @@ const MemberForm = () => {
   // Track if fields have been manually edited
   const [editedFields, setEditedFields] = useState({
     billingAmount: false,
-    pendingAmount: false
+    pendingAmount: false,
+    memberId: false
   });
+
+  // Function to fetch and set the next member ID
+  const fetchNextMemberId = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("members")
+        .select("member_id")
+        .order("member_id", { ascending: false })
+        .limit(1);
+      
+      if (error) {
+        console.error("Error fetching latest member ID:", error);
+        return;
+      }
+      
+      if (data && data.length > 0) {
+        // Get the latest ID and increment it
+        const latestId = data[0].member_id;
+        const nextId = (parseInt(latestId) + 1).toString();
+        
+        // Set the next member ID
+        setFormData(prev => ({
+          ...prev,
+          memberId: nextId
+        }));
+        
+        // Reset the edited state for member ID
+        setEditedFields(prev => ({
+          ...prev,
+          memberId: false
+        }));
+      } else {
+        // No existing members, start from 1001
+        setFormData(prev => ({
+          ...prev,
+          memberId: "1001"
+        }));
+        
+        // Reset the edited state for member ID
+        setEditedFields(prev => ({
+          ...prev,
+          memberId: false
+        }));
+      }
+    } catch (err) {
+      console.error("Error generating member ID:", err);
+    }
+  };
 
   // Fetch the latest member ID when component mounts
   useEffect(() => {
-    const fetchLatestMemberId = async () => {
-      try {
-        const { data, error } = await supabase
-          .from("members")
-          .select("member_id")
-          .order("member_id", { ascending: false })
-          .limit(1);
-        
-        if (error) {
-          console.error("Error fetching latest member ID:", error);
-          return;
-        }
-        
-        if (data && data.length > 0) {
-          // Get the latest ID and increment it
-          const latestId = data[0].member_id;
-          const nextId = (parseInt(latestId) + 1).toString();
-          
-          // Set the next member ID
-          setFormData(prev => ({
-            ...prev,
-            memberId: nextId
-          }));
-        } else {
-          // No existing members, start from 1001
-          setFormData(prev => ({
-            ...prev,
-            memberId: "1001"
-          }));
-        }
-      } catch (err) {
-        console.error("Error generating member ID:", err);
-      }
-    };
-
-    fetchLatestMemberId();
+    fetchNextMemberId();
   }, []);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     const files = (e.target as HTMLInputElement).files;
     
-    // Track if billing amount or pending amount has been manually edited
-    if (name === "billingAmount" || name === "pendingAmount") {
+    // Track if billing amount, pending amount or member ID has been manually edited
+    if (name === "billingAmount" || name === "pendingAmount" || name === "memberId") {
       setEditedFields(prev => ({
         ...prev,
         [name]: true
@@ -448,7 +462,8 @@ const MemberForm = () => {
       // Reset edited fields tracking
       setEditedFields({
         billingAmount: false,
-        pendingAmount: false
+        pendingAmount: false,
+        memberId: false
       });
       
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -472,6 +487,17 @@ const MemberForm = () => {
     fontSize: "13px",
   };
 
+  const buttonStyle = {
+    padding: "4px 10px",
+    backgroundColor: "#5c8eb8",
+    color: "#fff",
+    border: "none",
+    borderRadius: "4px",
+    cursor: "pointer",
+    fontSize: "12px",
+    marginLeft: "5px",
+  };
+
   return (
     <div style={{ padding: "20px", fontFamily: "Arial, sans-serif" }}>
       <ToastContainer />
@@ -491,13 +517,31 @@ const MemberForm = () => {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "20px" }}>
           {/* Column 1 */}
           <div>
-            <label style={labelStyle}>Member ID* (Auto-generated)</label>
+            <div style={{ display: "flex", alignItems: "center", marginBottom: "5px" }}>
+              <label style={labelStyle}>
+                Member ID* {editedFields.memberId ? "(Manual)" : "(Auto)"}
+              </label>
+              <button 
+                type="button" 
+                onClick={fetchNextMemberId}
+                style={buttonStyle}
+                title="Generate automatic member ID"
+              >
+                Auto
+              </button>
+            </div>
             <input
               type="text"
               name="memberId"
               value={formData.memberId}
-              style={{...inputStyle, backgroundColor: "#f0f0f0"}}
-              readOnly
+              onChange={handleInputChange}
+              style={{
+                ...inputStyle, 
+                backgroundColor: editedFields.memberId ? "#fff3cd" : "#f0f0f0",
+                marginBottom: "15px"
+              }}
+              placeholder="Enter Member ID or click Auto"
+              required
             />
             <label style={labelStyle}>Member Name*</label>
             <input
@@ -793,7 +837,7 @@ const MemberForm = () => {
             </select>
             <label style={labelStyle}>Height</label>
             <input
-              type="number"
+              type="text"
               name="height"
               value={formData.height}
               onChange={handleInputChange}
